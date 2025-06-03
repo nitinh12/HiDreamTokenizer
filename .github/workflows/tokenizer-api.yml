@@ -31,8 +31,8 @@ jobs:
           async function run() {
             const clipL = await pipeline("feature-extraction", "Xenova/clip-vit-base-patch32");
             const clipG = await pipeline("feature-extraction", "Xenova/clip-vit-large-patch14");
-            const t5 = await pipeline("feature-extraction", "Xenova/t5-base"); // Closest available to t5-xxl
-            const llama = await pipeline("feature-extraction", "Xenova/llama-2-7b"); // Closest available to llama-3
+            const t5 = await pipeline("feature-extraction", "Xenova/t5-base");
+            const llama = await pipeline("feature-extraction", "Xenova/phi-1_5");
 
             const clipLTokens = await clipL.tokenizer(prompt);
             const clipGTokens = await clipG.tokenizer(prompt);
@@ -50,7 +50,7 @@ jobs:
             console.log("CLIP-L tokens:", clipLTokens.input_ids.length);
             console.log("CLIP-G tokens:", clipGTokens.input_ids.length);
             console.log("T5 (base) tokens:", t5Tokens.input_ids.length);
-            console.log("LLAMA (2-7b approx) tokens:", llamaTokens.input_ids.length);
+            console.log("Phi-1.5 tokens:", llamaTokens.input_ids.length);
           }
 
           run();' > run-tokenizer.mjs
