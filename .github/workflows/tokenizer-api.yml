@@ -1,144 +1,58 @@
-# .github/workflows/tokenizer-api.yml (with caching)
-name: HiDream Tokenizer API
+name: Tokenizer API
 
 on:
-  repository_dispatch:
-    types: [tokenize_request]
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      prompts:
-        description: 'JSON string of prompts to tokenize'
-        required: true
-        type: string
 
 jobs:
-  tokenize:
+  build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Install dependencies
-      run: npm install
-    
-    - name: Create tokenizer script
-      run: |
-        cat > tokenizer.js << 'EOF'
-        import { pipeline, env } from '@xenova/transformers';
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-        env.allowLocalModels = false;
-        env.useBrowserCache = false;
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
-        async function tokenizePrompts(prompts) {
-          console.log('Loading tokenizers...');
-          
-          const [clipL, clipG, t5, llama] = await Promise.all([
-            pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32'),
-            pipeline('feature-extraction', 'Xenova/clip-vit-large-patch14'), 
-            pipeline('feature-extraction', 'Xenova/t5-v1_1-xxl'),
-            pipeline('feature-extraction', 'Xenova/llama-3-8b-instruct')
-          ]);
+      - name: Install dependencies
+        run: npm install @xenova/transformers
 
-          console.log('Tokenizers loaded, processing prompts...');
+      - name: Run tokenizer
+        run: |
+          node <<EOF
+          import { pipeline } from '@xenova/transformers';
 
-          const results = {};
+          const prompt = "A dog running through a sunny field.";
 
-          // CLIP-L
-          if (prompts.clipl) {
-            const encoded = await clipL.tokenizer(prompts.clipl);
-            results.clipl = encoded.input_ids.length;
-          }
+          async function run() {
+            const clipL = await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32');
+            const clipG = await pipeline('feature-extraction', 'Xenova/clip-vit-large-patch14');
+            const t5 = await pipeline('feature-extraction', 'Xenova/t5-base'); // Closest to t5-xxl
+            const llama = await pipeline('feature-extraction', 'Xenova/llama-2-7b'); // Approx LLaMA-3 replacement
 
-          // CLIP-G  
-          if (prompts.clipg) {
-            const encoded = await clipG.tokenizer(prompts.clipg);
-            results.clipg = encoded.input_ids.length;
-          }
+            const clipLTokens = await clipL.tokenizer(prompt);
+            const clipGTokens = await clipG.tokenizer(prompt);
 
-          // T5-XXL
-          if (prompts.t5xxl) {
-            const encoded = await t5.tokenizer(prompts.t5xxl, {
+            const t5Tokens = await t5.tokenizer(prompt, {
               padding: true,
               truncation: true,
-              max_length: 128
+              max_length: 128,
             });
-            results.t5xxl = encoded.input_ids.length;
+
+            const injected = `<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n${prompt}<|eot_id|>`;
+
+            const llamaTokens = await llama.tokenizer(injected);
+
+            console.log("CLIP-L tokens:", clipLTokens.input_ids.length);
+            console.log("CLIP-G tokens:", clipGTokens.input_ids.length);
+            console.log("T5 (base) tokens:", t5Tokens.input_ids.length);
+            console.log("LLAMA (2-7b approx) tokens:", llamaTokens.input_ids.length);
           }
 
-          // LLAMA
-          if (prompts.llama) {
-            const injected = `<|start_header_id|>system<|end_header_id|>
-
-        Describe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-        ${prompts.llama}<|eot_id|>`;
-            const encoded = await llama.tokenizer(injected);
-            results.llama = encoded.input_ids.length;
-          }
-
-          return results;
-        }
-
-        // Get prompts from environment or workflow input
-        const promptsInput = process.env.PROMPTS || process.argv[2];
-        const prompts = JSON.parse(promptsInput);
-
-        tokenizePrompts(prompts)
-          .then(results => {
-            console.log('Results:', JSON.stringify(results, null, 2));
-            // Write results to output file
-            require('fs').writeFileSync('tokenizer_results.json', JSON.stringify(results));
-          })
-          .catch(error => {
-            console.error('Error:', error);
-            process.exit(1);
-          });
-        EOF
-
-    - name: Run tokenizer
-      run: npm run tokenize
-      env:
-        PROMPTS: ${{ github.event.inputs.prompts || github.event.client_payload.prompts }}
-
-    - name: Upload results
-      uses: actions/upload-artifact@v4
-      with:
-        name: tokenizer-results
-        path: tokenizer_results.json
-        retention-days: 1
-
-    - name: Create gist with results (if token provided)
-      if: env.GITHUB_TOKEN
-      run: |
-        RESULTS=$(cat tokenizer_results.json)
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        
-        cat > gist_content.json << EOF
-        {
-          "description": "HiDream Tokenizer Results - $TIMESTAMP",
-          "public": false,
-          "files": {
-            "results.json": {
-              "content": "$RESULTS"
-            }
-          }
-        }
-        EOF
-        
-        curl -X POST \
-          -H "Authorization: token $GITHUB_TOKEN" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/gists \
-          -d @gist_content.json > gist_response.json
-        
-        GIST_URL=$(jq -r '.html_url' gist_response.json)
-        echo "Results available at: $GIST_URL"
-        echo "GIST_URL=$GIST_URL" >> $GITHUB_OUTPUT
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run();
+          EOF
