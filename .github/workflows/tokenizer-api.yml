@@ -24,16 +24,15 @@ jobs:
 
       - name: Run tokenizer
         run: |
-          node <<EOF
-          import { pipeline } from '@xenova/transformers';
+          echo 'import { pipeline } from "@xenova/transformers";
 
           const prompt = "A dog running through a sunny field.";
 
           async function run() {
-            const clipL = await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32');
-            const clipG = await pipeline('feature-extraction', 'Xenova/clip-vit-large-patch14');
-            const t5 = await pipeline('feature-extraction', 'Xenova/t5-base'); // Closest to t5-xxl
-            const llama = await pipeline('feature-extraction', 'Xenova/llama-2-7b'); // Approx LLaMA-3 replacement
+            const clipL = await pipeline("feature-extraction", "Xenova/clip-vit-base-patch32");
+            const clipG = await pipeline("feature-extraction", "Xenova/clip-vit-large-patch14");
+            const t5 = await pipeline("feature-extraction", "Xenova/t5-base"); // Closest available to t5-xxl
+            const llama = await pipeline("feature-extraction", "Xenova/llama-2-7b"); // Closest available to llama-3
 
             const clipLTokens = await clipL.tokenizer(prompt);
             const clipGTokens = await clipG.tokenizer(prompt);
@@ -41,7 +40,7 @@ jobs:
             const t5Tokens = await t5.tokenizer(prompt, {
               padding: true,
               truncation: true,
-              max_length: 128,
+              max_length: 128
             });
 
             const injected = `<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n${prompt}<|eot_id|>`;
@@ -54,5 +53,6 @@ jobs:
             console.log("LLAMA (2-7b approx) tokens:", llamaTokens.input_ids.length);
           }
 
-          run();
-          EOF
+          run();' > run-tokenizer.mjs
+
+          node run-tokenizer.mjs
