@@ -1,4 +1,4 @@
-# .github/workflows/tokenizer-api.yml
+# .github/workflows/tokenizer-api.yml (with caching)
 name: HiDream Tokenizer API
 
 on:
@@ -26,9 +26,7 @@ jobs:
         cache: 'npm'
     
     - name: Install dependencies
-      run: |
-        npm init -y
-        npm install @xenova/transformers
+      run: npm install
     
     - name: Create tokenizer script
       run: |
@@ -105,8 +103,7 @@ jobs:
         EOF
 
     - name: Run tokenizer
-      run: |
-        PROMPTS='${{ github.event.inputs.prompts || github.event.client_payload.prompts }}' node tokenizer.js
+      run: npm run tokenize
       env:
         PROMPTS: ${{ github.event.inputs.prompts || github.event.client_payload.prompts }}
 
